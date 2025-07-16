@@ -213,7 +213,7 @@ def juntar(path_carpeta='output_planillas'):
         print(f"⚠️ No se encontraron archivos CSV en {path_carpeta}")
         return None
     
-    print(f"Encontrados {len(archivos)} archivos. Comenzando a juntarlos...")
+    print(f"\nSe encontraron {len(archivos)} archivos para juntarlos...")
     
     lista_dfs = []
     
@@ -221,7 +221,7 @@ def juntar(path_carpeta='output_planillas'):
         try:
             df = pd.read_csv(archivo)
             lista_dfs.append(df)
-            print(f"✅ Cargado archivo: {archivo}")
+            print(f"🔵 Cargado archivo: {archivo}")
         except Exception as e:
             print(f"❌ Error al cargar {archivo}: {e}")
     
@@ -301,6 +301,8 @@ def archivos_estandarizados(dataframes_procesados):
             if col in df.columns:
                 if col == "weed applied":
                     df_estandar[col] = df[col].apply(estandarizar_applied).astype("Int64")
+                elif col == "weed placement":
+                    df_estandar[col] = df[col].apply(traducir_surco).astype(str)
                 else:
                     df_estandar[col] = df[col]
             else:
@@ -312,6 +314,57 @@ def archivos_estandarizados(dataframes_procesados):
         ruta_salida = os.path.join('output_planillas', nombre_salida)
         df_estandar.to_csv(ruta_salida, index=False)
         print(f"✅ Archivo guardado: {ruta_salida}")
+
+def traducir_surco(valor):
+    '''
+    Traduce los valores de la columna 'weed placement' a un formato estándar en inglés.
+    Maneja múltiples variaciones de texto y casos especiales.
+    
+    Args:
+        valor: Valor a traducir (puede ser str, numérico o nulo)
+        
+    Returns:
+        str: Valor traducido ('ROW', 'FURROW') o el original en mayúsculas si no hay coincidencia
+        pd.NA: Para valores nulos o vacíos
+    '''
+    # Manejo de valores nulos o vacíos
+    if pd.isna(valor) or str(valor).strip() == '':
+        return pd.NA
+    
+    # Convertir a string y normalizar
+    valor_str = str(valor).strip().lower()
+    
+    # Diccionario completo de traducciones
+    traducciones = {
+        # Español -> Inglés
+        'surco': 'ROW',
+        'entre surco': 'FURROW',
+        'entre surcos': 'FURROW',
+        'fila': 'ROW',
+        'entre filas': 'FURROW',
+        'línea': 'ROW',
+        'entre líneas': 'FURROW',
+        
+        # Inglés -> Mantener formato estándar
+        'row': 'ROW',
+        'furrow': 'FURROW',
+        'between rows': 'FURROW',
+        'interrow': 'FURROW',
+        
+    }
+    
+    # Buscar coincidencia exacta
+    if valor_str in traducciones:
+        return traducciones[valor_str]
+    
+    # Manejar prefijos comunes
+    if valor_str.startswith(('surco', 'fila', 'línea', 'row', 'sulco')):
+        return 'ROW'
+    if valor_str.startswith(('entre', 'between', 'inter')):
+        return 'FURROW'
+    
+    # Si no se encuentra traducción, devolver el valor original en mayúsculas
+    return str(valor).strip().upper()
 
 def estandarizar_applied(valor):
     """
