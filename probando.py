@@ -20,11 +20,11 @@ def main():
         return
     
     verificar(archivos)
-    subir(archivos)
+    #subir(archivos)
 
 
-#FUNCIONES
-def abrir_carpeta(carpeta):
+#FUNCIONES VERIFICAR
+def abrir_carpeta(carpeta): #hecho
     """
     Abre la carpeta que contiene la planilla de los distintos clientes en formato (.csv).
     
@@ -57,62 +57,100 @@ def verificar(archivos):
             return
 
         print(f"\n📄 Archivo leído: {archivo}")
-        verificar_columnas(archivo)
+        verificar_columnas(df)
 
 
 def verificar_columnas(df):
     """
-    Verifica que contenga las columnas esenciales, es decir las que a nosotros nos importa. Como pueden ser:
-    "size",           # tamaño cm2 (float)
-    "height",         # altura (float)
-    "weed placement", # lugar (string)
-    "weed type",      # tipo (string)
-    "weed name",      # nombre (string)
-    "weed applied"    # aplicado (bool)
-    En caso de que no esten advertir que no se encontro.
+    Verifica que contenga las columnas esenciales, y si alguna tiene un nombre distinto,
+    intenta detectarla y renombrarla.
     
     Args:
-        df: arhivo a verificar
+        df: archivo a verificar
     """
 
-    # Normalizar nombres de columnas
-    columnas_originales = df.columns
-    columnas_normalizadas = [col.strip().lower() for col in columnas_originales]
-    mapeo_columnas = dict(zip(columnas_normalizadas, columnas_originales))
-
     for col in COLUMNAS_A_BUSCAR:
+        # Normalizamos los nombres actualizados en cada iteración
+        columnas_originales = df.columns
+        columnas_normalizadas = [c.strip().lower() for c in columnas_originales]
+        mapeo_columnas = dict(zip(columnas_normalizadas, columnas_originales))
+
         if col in columnas_normalizadas:
             col_original = mapeo_columnas[col]
             cantidad_nulls = df[col_original].isnull().sum()
             print(f"✅ '{col}' está presente. Valores nulos: {cantidad_nulls}")
-            verificar_tipo_dato(col)
+            verificar_tipo_dato(df, col_original, col)
         else:
-            # elif busqueda_profunda(col, columnas_normalizadas) else
-            print(f"❌ '{col}' NO está presente.")
+            resultado = busqueda_profunda(col, columnas_normalizadas, df)
+            if resultado:
+                col_encontrada, nulos = resultado
+                print(f"✅🔄 '{col}' fue encontrado como '{col_encontrada}' y renombrado. Valores nulos: {nulos}")
+                verificar_tipo_dato(df, col, col)
+            else:
+                print(f"❌ '{col}' NO está presente.")
 
-def verificar_tipo_dato(df, columna):
+
+def verificar_tipo_dato(df, col_original, col_normalizado):
     """
-    Verifica que los valores de una columna sean flotantes (para columnas numéricas).
-    Para 'weed diameter', 'size' y 'height' debe ser float, de lo contrario muestra mensaje de error y lo especifica.
+    Verifica que los valores de una columna sean del tipo esperado.
+    
+    Para columnas numéricas ('weed diameter', 'size', 'height') debe ser float.
     
     Args:
-        df: DataFrame de pandas
-        columna: Nombre de la columna a verificar (en minúsculas y sin espacios extras)
+        df: DataFrame
+        col_original: nombre original (como está en el archivo)
+        col_normalizado: nombre limpio (minúscula y sin espacios)
     """
-    # Columnas que deben ser flotantes
     columnas_flotantes = ['weed diameter', 'size', 'height']
-    
-    if columna in columnas_flotantes:
-        # Obtener la columna original (puede tener mayúsculas o espacios diferentes)
-        col_original = next((c for c in df.columns if c.strip().lower() == columna), None)      
-            
-        # Verificar cada valor no nulo
+
+    if col_normalizado in columnas_flotantes:
         for idx, valor in df[col_original].items():
-            if pd.notna(valor):  # Solo verificar valores no nulos
+            if pd.notna(valor):
                 try:
-                    float(valor)  # Intentar convertir a float
+                    float(valor)
                 except (ValueError, TypeError):
-                    print(f"⚠️ Valor no flotante encontrado en '{col_original}', fila {idx}: '{valor}'")
+                    print(f"⚠️ Valor no flotante en '{col_original}' (fila {idx}): '{valor}'")
+
+#FUNCIONES SUBIR
+def busqueda_profunda(col, columnas_normalizadas, df):
+    """
+    Busca columnas equivalentes (en otro idioma o sinónimos) y si las encuentra,
+    renombra la columna del DataFrame para que se llame como `col`.
+
+    Args:
+        col: nombre estándar buscado (normalizado)
+        columnas_normalizadas: lista de columnas normalizadas (minúsculas, sin espacios)
+        df: DataFrame actual
+
+    Returns:
+        tuple: (nuevo_nombre (col), cantidad_nulls) si se renombró, None si no se encontró
+    """
+    equivalencias = {
+        'weed diameter': ['diametro', 'diameter', 'diametro maleza'],
+        'size': ['tamaño', 'area', 'superficie'],
+        'height': ['altura', 'alto'],
+        'weed placement': ['lugar', 'ubicacion', 'posicion', 'localizacion'],
+        'weed type': ['tipo', 'tipo maleza', 'clase', 'categoria'],
+        'weed name': ['nombre', 'identificacion', 'nombre maleza'],
+        'weed applied': ['aplicado', 'se aplicó', 'fue aplicado']
+    }
+
+
+    if col not in equivalencias:
+        return None
+
+    for posible in equivalencias[col]:
+        if posible == col:
+            continue  # Evitar "sinónimo" igual al nombre estándar
+
+        if posible in columnas_normalizadas:
+            col_original = next((c for c in df.columns if c.strip().lower() == posible), None)
+            if col_original:
+                cantidad_nulls = df[col_original].isnull().sum()
+                df.rename(columns={col_original: col}, inplace=True)
+                return (col_original, cantidad_nulls)
+
+    return None
 
 def subir(archivos):
     """
@@ -143,20 +181,6 @@ def base_datos_subir(archivos):
     #crea los archivos standarizados
     #los junta
     #los sube
-
-def busqueda_profunda(col, columnas_normalizadas, valores_nulos):
-    """
-    Se busca si la columna se registro con otro nombre, en caso de encontrarla avisarlo
-    y decir porque nombre se cambio. Ejemplo:
-
-    ✅🔄 'wide diameter' está presente (diametro -> 'weed diameter'). Valores nulos x
-    
-    Args:
-        col: columna que deseamos encontrar
-        columnas_normalizadas: todas las columnas
-        valores_nulos: valores nulos
-    """ 
-
 
 
 if __name__ == "__main__":
