@@ -2,6 +2,7 @@ import pandas as pd
 import glob
 import os
 from datetime import datetime
+import sqlite3
 
 # Columnas que queremos verificar
 COLUMNAS_A_BUSCAR = [
@@ -160,6 +161,7 @@ def busqueda_profunda(col, columnas_normalizadas, df):
 
     return None
 
+#FUNCIONES SUBIR
 def subir(dataframes_procesados):
     """
     Le pregunta al usuario si a partir de la información ofrecida quiere subir los datos a
@@ -186,9 +188,74 @@ def base_datos_subir(dataframes_procesados):
         archivos: archivos a subir
     """ 
 
-    #funcion que crea los archivos standarizados, con la fecha, el nombre del cliente y quien lo subio
+    #crear los archivos estandarizados
     archivos_estandarizados(dataframes_procesados)
-    #funcion que los sube
+
+    #funcion que los junta y sube a la base de datos
+    df_unificado = juntar()
+
+'''
+    print("\n¿Estas seguo de que queres subir los datos a la base de datos? (S/N)")
+    respuesta = input().strip().upper()
+
+    if respuesta == 'S':
+        subir_bd()
+    else:
+        print("No se subieron los datos a la base de datos.")
+'''
+
+def juntar(path_carpeta='output_planillas'):
+    """
+    Junta todos los archivos CSV de la carpeta dada y devuelve un DataFrame unificado.
+    """
+    archivos = glob.glob(os.path.join(path_carpeta, "*.csv"))
+    if not archivos:
+        print(f"⚠️ No se encontraron archivos CSV en {path_carpeta}")
+        return None
+    
+    print(f"Encontrados {len(archivos)} archivos. Comenzando a juntarlos...")
+    
+    lista_dfs = []
+    
+    for archivo in archivos:
+        try:
+            df = pd.read_csv(archivo)
+            lista_dfs.append(df)
+            print(f"✅ Cargado archivo: {archivo}")
+        except Exception as e:
+            print(f"❌ Error al cargar {archivo}: {e}")
+    
+    if not lista_dfs:
+        print("⚠️ No se cargó ningún archivo correctamente.")
+        return None
+    
+    df_unificado = pd.concat(lista_dfs, ignore_index=True)
+    
+    # Crear carpeta base_datos si no existe
+    carpeta_bd = 'base_datos'
+    if not os.path.exists(carpeta_bd):
+        os.makedirs(carpeta_bd)
+    
+    nombre_salida = f"Datos_unificados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    ruta_salida = os.path.join(carpeta_bd, nombre_salida)
+    df_unificado.to_csv(ruta_salida, index=False)
+    print(f"✅ Archivo unificado guardado en: {ruta_salida}")
+    
+    return df_unificado
+
+
+def subir_bd(df):
+    """
+    Sube el DataFrame a la base de datos SQLite.
+    """
+
+    conn = sqlite3.connect('mi_base_de_datos.db')
+    try:
+        df.to_sql('tabla_weeds', conn, if_exists='append', index=False)
+    except Exception as e:
+        print(f"❌ Error al subir a la base de datos: {e}")
+    finally:
+        conn.close()
 
 def archivos_estandarizados(dataframes_procesados):
     """
@@ -241,7 +308,7 @@ def archivos_estandarizados(dataframes_procesados):
                 print(f"⚠️ Columna '{col}' no encontrada, se llenará con valores nulos")
 
         # Guardar archivo
-        nombre_salida = f"estandarizado_{fecha}_{cliente}_{os.path.basename(archivo)}"
+        nombre_salida = f"[estandarizado_{fecha}_{cliente}]_{os.path.basename(archivo)}"
         ruta_salida = os.path.join('output_planillas', nombre_salida)
         df_estandar.to_csv(ruta_salida, index=False)
         print(f"✅ Archivo guardado: {ruta_salida}")
