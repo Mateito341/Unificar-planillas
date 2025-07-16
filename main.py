@@ -1,5 +1,7 @@
 import pandas as pd
 import glob
+import os
+from datetime import datetime
 
 # Columnas que queremos verificar
 COLUMNAS_A_BUSCAR = [
@@ -15,15 +17,16 @@ COLUMNAS_A_BUSCAR = [
 def main():
 
     archivos = abrir_carpeta("input_planillas")
-
     if not archivos:
         return
     
-    verificar(archivos)
-    #subir(archivos)
+    dataframes_procesados = verificar(archivos)
+    if dataframes_procesados:  # Solo continuar si hay DataFrames procesados
+        subir(dataframes_procesados)
 
 
-#FUNCIONES
+
+#FUNCIONES VERIFICAR
 def abrir_carpeta(carpeta): #hecho
     """
     Abre la carpeta que contiene la planilla de los distintos clientes en formato (.csv).
@@ -39,55 +42,199 @@ def abrir_carpeta(carpeta): #hecho
 
     return archivos
 
-
 def verificar(archivos):
     """
-    Verifica que los archivos este en condiciones para poder subirse. 
-    Advierte al usuario de los posibles errores que pueden suceder.
-    
-    Args:
-        archivos: todos los archivos a verificar
+    Verifica los archivos y devuelve los DataFrames con columnas estandarizadas
     """
-
+    dataframes_procesados = {}
+    
     for archivo in archivos:
         try:
             df = pd.read_csv(archivo)
         except Exception as e:
             print(f"❌ Error al leer el archivo {archivo}: {e}")
-            return
+            continue
 
         print(f"\n📄 Archivo leído: {archivo}")
-        verificar_columnas(df)
+        verificar_columnas(df)  # Esta función modifica el DataFrame directamente
+        dataframes_procesados[archivo] = df
+    
+    return dataframes_procesados
 
 
 def verificar_columnas(df):
     """
-    Verifica que contenga las columnas esenciales, es decir las que a nosotros nos importa. Como pueden ser:
-    "size",           # tamaño cm2 (float)
-    "height",         # altura (float)
-    "weed placement", # lugar (string)
-    "weed type",      # tipo (string)
-    "weed name",      # nombre (string)
-    "weed applied"    # aplicado (bool)
-    En caso de que no esten advertir que no se encontro.
+    Verifica que contenga las columnas esenciales, y si alguna tiene un nombre distinto,
+    intenta detectarla y renombrarla. En caso de que no se encuentre, avisa al usuario.
     
     Args:
-        df: arhivo a verificar
+        df: archivo a verificar
     """
 
-    # Normalizar nombres de columnas
-    columnas_originales = df.columns # guarda todos los nombres de la columnas
-    columnas_normalizadas = [col.strip().lower() for col in columnas_originales] # guarda todos los nombres de la columnas en minusculas y sin espacios extras
+    columnas_originales = df.columns
+    columnas_normalizadas = [c.strip().lower() for c in columnas_originales]
+    mapeo_columnas = dict(zip(columnas_normalizadas, columnas_originales))
 
     for col in COLUMNAS_A_BUSCAR:
-        if col in columnas_normalizadas:
+        col_lower = col.lower()
+        if col_lower in columnas_normalizadas:
+            # Renombrar siempre a la versión exacta de COLUMNAS_A_BUSCAR
+            col_original = mapeo_columnas[col_lower]
+            if col_original != col:  # Solo renombrar si es diferente
+                df.rename(columns={col_original: col}, inplace=True)
             cantidad_nulls = df[col].isnull().sum()
             print(f"✅ '{col}' está presente. Valores nulos: {cantidad_nulls}")
-            #verificar_tipo_dato(col)
+            verificar_tipo_dato(df, col, col)
         else:
-            # elif busqueda_profunda(col, columnas_normalizadas) else
-            print(f"❌ '{col}' NO está presente.")
+            resultado = busqueda_profunda(col, columnas_normalizadas, df)
+            if resultado:
+                col_encontrada, nulos = resultado
+                print(f"✅🔄 '{col}' fue encontrado como '{col_encontrada}' y renombrado. Valores nulos: {nulos}")
+                verificar_tipo_dato(df, col, col)
+            else:
+                print(f"❌ '{col}' NO está presente.")
 
+
+def verificar_tipo_dato(df, col_original, col_normalizado):
+    """
+    Verifica que los valores de una columna sean del tipo esperado.
+    Para columnas numéricas ('weed diameter', 'size', 'height') debe ser float.
+    
+    Args:
+        df: DataFrame
+        col_original: nombre original (como está en el archivo)
+        col_normalizado: nombre limpio (minúscula y sin espacios)
+    """
+    columnas_flotantes = ['weed diameter', 'size', 'height']
+
+    if col_normalizado in columnas_flotantes:
+        for idx, valor in df[col_original].items():
+            if pd.notna(valor):
+                try:
+                    float(valor)
+                except (ValueError, TypeError):
+                    print(f"⚠️ Valor no flotante en '{col_original}' (fila {idx}): '{valor}'")
+
+
+def busqueda_profunda(col, columnas_normalizadas, df):
+    """
+    Busca columnas equivalentes (en otro idioma o sinónimos) y si las encuentra,
+    renombra la columna del DataFrame para que se llame como `col`.
+
+    Args:
+        col: nombre estándar buscado (normalizado)
+        columnas_normalizadas: lista de columnas normalizadas (minúsculas, sin espacios)
+        df: DataFrame actual
+
+    Returns:
+        tuple: (nuevo_nombre (col), cantidad_nulls) si se renombró, None si no se encontró
+    """
+    equivalencias = {
+        'weed diameter': ['diametro', 'diameter', 'diametro maleza'],
+        'size': ['tamaño', 'area', 'superficie'],
+        'height': ['altura', 'alto'],
+        'weed placement': ['lugar', 'ubicacion', 'posicion', 'localizacion'],
+        'weed type': ['tipo', 'tipo maleza', 'clase', 'categoria'],
+        'weed name': ['nombre', 'identificacion', 'nombre maleza'],
+        'weed applied': ['aplicado', 'se aplicó', 'fue aplicado']
+    }
+
+    if col.lower() not in [k.lower() for k in equivalencias.keys()]:
+        return None
+
+    for posible in equivalencias[col]:
+        posible_lower = posible.lower()
+        if posible_lower in columnas_normalizadas:
+            col_original = next((c for c in df.columns if c.strip().lower() == posible_lower), None)
+            if col_original:
+                cantidad_nulls = df[col_original].isnull().sum()
+                df.rename(columns={col_original: col}, inplace=True)  # Renombrar al formato exacto
+                return (col_original, cantidad_nulls)
+
+    return None
+
+def subir(dataframes_procesados):
+    """
+    Le pregunta al usuario si a partir de la información ofrecida quiere subir los datos a
+    la base de datos. En caso de que si lo sube, sino, termina el programa.
+    
+    Args:
+        archivos: archivos a subir
+    """
+    
+    print("\n¿Deseás subirlo a la base de datos? (S/N)")
+    respuesta = input().strip().upper()
+
+    if respuesta == 'S':
+        print("Subiendo a la base de datos...")
+        base_datos_subir(dataframes_procesados)
+    else:
+        print("No se subieron los datos a la base de datos.")
+
+def base_datos_subir(dataframes_procesados):
+    """
+    Sube los datos a la base de datos finalmente.
+    
+    Args:
+        archivos: archivos a subir
+    """ 
+
+    #funcion que crea los archivos standarizados, con la fecha, el nombre del cliente y quien lo subio
+    archivos_estandarizados(dataframes_procesados)
+    #funcion que los sube
+
+def archivos_estandarizados(dataframes_procesados):
+    """
+    Crea los archivos estandarizados con sus respectivos datos, además de la fecha, 
+    el nombre del cliente y quien lo subió (estos últimos dados por el usuario).
+    Los guarda en la carpeta 'output_planillas'.
+    
+    El estándar incluye:
+    - Columnas base: 'weed_count', 'date', 'client', 'user'
+    - Columnas de datos: 'weed_diameter', 'size', 'height', 'weed_placement','weed_type', 'weed_name', 'weed_applied'
+    
+    Args:
+        archivos: archivos a estandarizar
+    """
+    
+    if not os.path.exists('output_planillas'):
+        os.makedirs('output_planillas')
+    
+    for archivo, df in dataframes_procesados.items():
+        print(f"\n📄 Procesando archivo: {archivo}")
+        
+        # Obtener metadatos
+        while True:
+            fecha = input("Ingrese la fecha del estudio (formato YYYY-MM-DD): ").strip()
+            try:
+                datetime.strptime(fecha, '%Y-%m-%d')
+                break
+            except ValueError:
+                print("Formato de fecha incorrecto. Use YYYY-MM-DD")
+        
+        cliente = input("Ingrese el nombre del cliente: ").strip()
+        usuario = input("Ingrese su nombre: ").strip()
+        
+        # Crear DataFrame estandarizado
+        df_estandar = pd.DataFrame()
+        df_estandar['weed_count'] = range(1, len(df) + 1)
+        df_estandar['date'] = fecha
+        df_estandar['client'] = cliente
+        df_estandar['user'] = usuario
+        
+        # Verificar columnas en el DataFrame ya procesado
+        for col in COLUMNAS_A_BUSCAR:
+            if col in df.columns:
+                df_estandar[col] = df[col]
+            else:
+                df_estandar[col] = pd.NA
+                print(f"⚠️ Columna '{col}' no encontrada, se llenará con valores nulos")
+        
+        # Guardar archivo
+        nombre_salida = f"estandarizado_{fecha}_{cliente}_{os.path.basename(archivo)}"
+        ruta_salida = os.path.join('output_planillas', nombre_salida)
+        df_estandar.to_csv(ruta_salida, index=False)
+        print(f"✅ Archivo guardado: {ruta_salida}")
 
 if __name__ == "__main__":
     main()
