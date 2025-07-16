@@ -1,5 +1,7 @@
 import pandas as pd
 import glob
+import os
+from datetime import datetime
 
 # Columnas que queremos verificar
 COLUMNAS_A_BUSCAR = [
@@ -15,12 +17,13 @@ COLUMNAS_A_BUSCAR = [
 def main():
 
     archivos = abrir_carpeta("input_planillas")
-
     if not archivos:
         return
     
-    verificar(archivos)
-    #subir(archivos)
+    dataframes_procesados = verificar(archivos)
+    if dataframes_procesados:  # Solo continuar si hay DataFrames procesados
+        subir(dataframes_procesados)
+
 
 
 #FUNCIONES VERIFICAR
@@ -39,42 +42,40 @@ def abrir_carpeta(carpeta): #hecho
 
     return archivos
 
-
 def verificar(archivos):
     """
-    Verifica que los archivos este en condiciones para poder subirse. 
-    Advierte al usuario de los posibles errores que pueden suceder.
-    
-    Args:
-        archivos: todos los archivos a verificar
+    Verifica los archivos y devuelve los DataFrames con columnas estandarizadas
     """
-
+    dataframes_procesados = {}
+    
     for archivo in archivos:
         try:
             df = pd.read_csv(archivo)
         except Exception as e:
             print(f"❌ Error al leer el archivo {archivo}: {e}")
-            return
+            continue
 
         print(f"\n📄 Archivo leído: {archivo}")
-        verificar_columnas(df)
+        verificar_columnas(df)  # Esta función modifica el DataFrame directamente
+        dataframes_procesados[archivo] = df
+    
+    return dataframes_procesados
 
 
 def verificar_columnas(df):
     """
     Verifica que contenga las columnas esenciales, y si alguna tiene un nombre distinto,
-    intenta detectarla y renombrarla.
+    intenta detectarla y renombrarla. En caso de que no se encuentre, avisa al usuario.
     
     Args:
         df: archivo a verificar
     """
 
-    for col in COLUMNAS_A_BUSCAR:
-        # Normalizamos los nombres actualizados en cada iteración
-        columnas_originales = df.columns
-        columnas_normalizadas = [c.strip().lower() for c in columnas_originales]
-        mapeo_columnas = dict(zip(columnas_normalizadas, columnas_originales))
+    columnas_originales = df.columns #columnas originales del DataFrame
+    columnas_normalizadas = [c.strip().lower() for c in columnas_originales] #columnas originales en minúsculas y sin espacios
+    mapeo_columnas = dict(zip(columnas_normalizadas, columnas_originales)) # mapeo de columnas normalizadas a originales
 
+    for col in COLUMNAS_A_BUSCAR:
         if col in columnas_normalizadas:
             col_original = mapeo_columnas[col]
             cantidad_nulls = df[col_original].isnull().sum()
@@ -93,7 +94,6 @@ def verificar_columnas(df):
 def verificar_tipo_dato(df, col_original, col_normalizado):
     """
     Verifica que los valores de una columna sean del tipo esperado.
-    
     Para columnas numéricas ('weed diameter', 'size', 'height') debe ser float.
     
     Args:
@@ -110,6 +110,7 @@ def verificar_tipo_dato(df, col_original, col_normalizado):
                     float(valor)
                 except (ValueError, TypeError):
                     print(f"⚠️ Valor no flotante en '{col_original}' (fila {idx}): '{valor}'")
+
 
 #FUNCIONES SUBIR
 def busqueda_profunda(col, columnas_normalizadas, df):
@@ -152,7 +153,7 @@ def busqueda_profunda(col, columnas_normalizadas, df):
 
     return None
 
-def subir(archivos):
+def subir(dataframes_procesados):
     """
     Le pregunta al usuario si a partir de la información ofrecida quiere subir los datos a
     la base de datos. En caso de que si lo sube, sino, termina el programa.
@@ -166,11 +167,11 @@ def subir(archivos):
 
     if respuesta == 'S':
         print("Subiendo a la base de datos...")
-        base_datos_subir(archivos)
+        base_datos_subir(dataframes_procesados)
     else:
         print("No se subieron los datos a la base de datos.")
 
-def base_datos_subir(archivos):
+def base_datos_subir(dataframes_procesados):
     """
     Sube los datos a la base de datos finalmente.
     
@@ -178,10 +179,63 @@ def base_datos_subir(archivos):
         archivos: archivos a subir
     """ 
 
-    #crea los archivos standarizados
-    #los junta
-    #los sube
+    #funcion que crea los archivos standarizados, con la fecha, el nombre del cliente y quien lo subio
+    archivos_estandarizados(dataframes_procesados)
+    #funcion que los sube
 
+def archivos_estandarizados(dataframes_procesados):
+    """
+    Crea los archivos estandarizados con sus respectivos datos, además de la fecha, 
+    el nombre del cliente y quien lo subió (estos últimos dados por el usuario).
+    Los guarda en la carpeta 'output_planillas'.
+    
+    El estándar incluye:
+    - Columnas base: 'weed_count', 'date', 'client', 'user'
+    - Columnas de datos: 'weed_diameter', 'size', 'height', 'weed_placement', 
+                         'weed_type', 'weed_name', 'weed_applied'
+    
+    Args:
+        archivos: archivos a estandarizar
+    """
+    
+    if not os.path.exists('output_planillas'):
+        os.makedirs('output_planillas')
+    
+    for archivo, df in dataframes_procesados.items():
+        print(f"\n📄 Procesando archivo: {archivo}")
+        
+        # Obtener metadatos
+        while True:
+            fecha = input("Ingrese la fecha del estudio (formato YYYY-MM-DD): ").strip()
+            try:
+                datetime.strptime(fecha, '%Y-%m-%d')
+                break
+            except ValueError:
+                print("Formato de fecha incorrecto. Use YYYY-MM-DD")
+        
+        cliente = input("Ingrese el nombre del cliente: ").strip()
+        usuario = input("Ingrese su nombre: ").strip()
+        
+        # Crear DataFrame estandarizado
+        df_estandar = pd.DataFrame()
+        df_estandar['weed_count'] = range(1, len(df) + 1)
+        df_estandar['date'] = fecha
+        df_estandar['client'] = cliente
+        df_estandar['user'] = usuario
+        
+        # Verificar columnas en el DataFrame ya procesado
+        for col in COLUMNAS_A_BUSCAR:
+            if col in df.columns:
+                df_estandar[col] = df[col]
+            else:
+                df_estandar[col] = pd.NA
+                print(f"⚠️ Columna '{col}' no encontrada, se llenará con valores nulos")
+        
+        # Guardar archivo
+        nombre_salida = f"estandarizado_{fecha}_{cliente}_{os.path.basename(archivo)}"
+        ruta_salida = os.path.join('output_planillas', nombre_salida)
+        df_estandar.to_csv(ruta_salida, index=False)
+        print(f"✅ Archivo guardado: {ruta_salida}")
 
 if __name__ == "__main__":
     main()
