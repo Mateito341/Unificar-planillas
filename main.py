@@ -99,6 +99,7 @@ def verificar_tipo_dato(df, col_original, col_normalizado):
     """
     Verifica que los valores de una columna sean del tipo esperado.
     Para columnas numéricas ('weed diameter', 'size', 'height') debe ser float.
+    Ademas verificar que la columna 'weed applied' sea del tipo correcto.
     
     Args:
         df: DataFrame
@@ -114,6 +115,12 @@ def verificar_tipo_dato(df, col_original, col_normalizado):
                     float(valor)
                 except (ValueError, TypeError):
                     print(f"⚠️ Valor no flotante en '{col_original}' (fila {idx}): '{valor}'")
+
+    elif col_normalizado == 'weed applied':
+        valores_unicos = df[col_original].dropna().unique()
+        for valor in valores_unicos:
+            if valor not in [0, 1, '0', '1', None]:
+                print(f"⚠️ Valor inesperado en 'weed applied': '{valor}'. Solo se permiten 0 y 1.")
 
 
 def busqueda_profunda(col, columnas_normalizadas, df):
@@ -225,16 +232,44 @@ def archivos_estandarizados(dataframes_procesados):
         # Verificar columnas en el DataFrame ya procesado
         for col in COLUMNAS_A_BUSCAR:
             if col in df.columns:
-                df_estandar[col] = df[col]
+                if col == "weed applied":
+                    df_estandar[col] = df[col].apply(estandarizar_applied).astype("Int64")
+                else:
+                    df_estandar[col] = df[col]
             else:
                 df_estandar[col] = pd.NA
                 print(f"⚠️ Columna '{col}' no encontrada, se llenará con valores nulos")
-        
+
         # Guardar archivo
         nombre_salida = f"estandarizado_{fecha}_{cliente}_{os.path.basename(archivo)}"
         ruta_salida = os.path.join('output_planillas', nombre_salida)
         df_estandar.to_csv(ruta_salida, index=False)
         print(f"✅ Archivo guardado: {ruta_salida}")
+
+def estandarizar_applied(valor):
+    """
+    Estandariza valores para la columna 'weed applied':
+    - Acepta: 1, 0, 1.0, 0.0, '1', '0', '1.0', '0.0', 'true', 'false'
+    - Devuelve: 1 o 0 (int)
+    - Si no es válido, devuelve pd.NA
+    """
+    if pd.isna(valor):
+        return pd.NA
+
+    if isinstance(valor, (int, float)):
+        if valor == 1 or valor == 1.0:
+            return 1
+        elif valor == 0 or valor == 0.0:
+            return 0
+    elif isinstance(valor, str):
+        valor_limpio = valor.strip().lower()
+        if valor_limpio in ['1', '1.0', 'true']:
+            return 1
+        elif valor_limpio in ['0', '0.0', 'false']:
+            return 0
+
+    print(f"⚠️ Valor inválido en 'weed applied': '{valor}' → será reemplazado por vacío")
+    return pd.NA
 
 if __name__ == "__main__":
     main()
