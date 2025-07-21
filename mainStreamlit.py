@@ -1,6 +1,13 @@
 import streamlit as st
 import pandas as pd
 import datetime
+from pymongo import MongoClient
+
+# Conexión a MongoDB local
+client = MongoClient("mongodb://localhost:27017")
+db = client["ensayos_db"]
+coleccion = db["formularios"]
+
 
 st.set_page_config(page_title="Formulario de Ensayos", layout="wide")
 st.title("Formulario de Ensayos")
@@ -11,11 +18,11 @@ tabs = st.tabs([
     "🌍 Condiciones del Lote",
     "🚜 Detalles de Aplicación",
     "🛠️ Evaluación"
+    "📤 Subir"
 ])
 
 # === 🧑‍🌾 Información del Ensayo ===
 with tabs[0]:
-
     col1, col2 = st.columns(2)
 
     with col1:
@@ -24,20 +31,17 @@ with tabs[0]:
             name = st.text_input("Nombre del cliente")
             sprai_id = st.text_input("ID del sistema pulverizador")
             modules_id = st.text_input("ID de los módulos utilizados")
-            submitted_cliente = st.form_submit_button("Guardar Cliente")
 
         with st.form("form_personal"):
             st.subheader("👷 Personal")
             machine_operator = st.text_input("Operador de la máquina")
             trial_testers = st.text_input("Evaluadores del ensayo")
-            submitted_personal = st.form_submit_button("Guardar Personal")
 
     with col2:
         with st.form("form_ensayo"):
             st.subheader("🗓️ Datos del ensayo")
             test_date = st.date_input("Fecha del ensayo", value=datetime.date.today())
             test_time = st.time_input("Hora del ensayo")
-            submitted_ensayo = st.form_submit_button("Guardar Ensayo")
 
 # === 🌍 Condiciones del Lote ===
 with tabs[1]:
@@ -52,7 +56,6 @@ with tabs[1]:
             latitude = st.text_input("Latitud")
             longitude = st.text_input("Longitud")
             soil_type = st.text_input("Tipo de suelo")
-            submitted_ubicacion = st.form_submit_button("Guardar Ubicación")
 
     with col2:
         with st.form("form_ambientales"):
@@ -62,7 +65,8 @@ with tabs[1]:
             relative_humidity = st.number_input("Humedad relativa (%)")
             wind_direction = st.text_input("Dirección del viento")
             ambient_light_intensity = st.number_input("Intensidad de luz")
-            submitted_ambientales = st.form_submit_button("Guardar Condiciones")
+
+
 
     with col3:
         with st.form("form_cultivo"):
@@ -72,7 +76,6 @@ with tabs[1]:
             row_spacing = st.number_input("Distancia entre hileras(cm)")
             crop_population = st.number_input("Población por hectárea")
             crop_stage = st.text_input("Estado fenológico")
-            submitted_cultivo = st.form_submit_button("Guardar Cultivo")
 
 # === 🚜 Detalles de Aplicación ===
 with tabs[2]:
@@ -91,7 +94,6 @@ with tabs[2]:
             speed = st.number_input("Velocidad (km/h)")
             spray_pressure = st.number_input("Presión de aplicación (bar)")
             flow_rate = st.number_input("Caudal (L/min)")
-            submitted_pulverizadora = st.form_submit_button("Guardar Pulverizadora")
 
     with col2:
         with st.form("form_colorante"):
@@ -101,14 +103,12 @@ with tabs[2]:
             dye_concentration = st.number_input("Concentración (%)")
             sensitivity = st.number_input("Sensibilidad")
             tile_size = st.number_input("Tamaño (μm)")
-            submitted_colorante = st.form_submit_button("Guardar Colorante")
 
     with col3:
         with st.form("form_herbicida"):
             st.subheader("💧 Herbicida")
             herbicide = st.text_input("Nombre del herbicida")
             dose = st.text_input("Dosis aplicada")
-            submitted_herbicida = st.form_submit_button("Guardar Herbicida")
 
 # === 🤖 Evaluación ===
 with tabs[3]:
@@ -119,7 +119,6 @@ with tabs[3]:
             st.subheader("🌾 Modelo de Detección")
             sens = st.selectbox("Sensibilidad", [1, 2, 3])
             tile = st.selectbox("Baldosa", [1, 2, 3])
-            submitted_modelo = st.form_submit_button("Guardar Modelo")
 
     with col2:
         with st.form("form_resultados"):
@@ -127,9 +126,6 @@ with tabs[3]:
             st.write("Subí un archivo CSV con los datos de malezas")
             csv_file = st.file_uploader("Cargar archivo CSV", type=["csv"])
             uploader = st.text_input("Persona que cargó los datos")
-            submitted_resultados = st.form_submit_button("Guardar Resultados")
 
-            if submitted_resultados and csv_file:
-                df = pd.read_csv(csv_file)
-                st.success("Archivo cargado correctamente:")
-                st.dataframe(df)
+with tabs[4]:
+    st.subheader("🔍 Previsualizar")
